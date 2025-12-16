@@ -33,7 +33,7 @@ GPU_INDEX = 0
 # - NVENC_CQ plus bas = meilleure qualité (fichier + gros), plus haut = + petit.
 #   Valeurs courantes: 18 (très propre), 19-21 (bon "streamable"), 22+ (agressif).
 NVENC_PRESET = "slow"  # alternatives: "medium" si tu veux aller plus vite.
-NVENC_CQ = 19
+NVENC_CQ = 20
 
 # Plafonds "Wi‑Fi friendly" (limite les pointes, évite les buffers):
 # - Si ton Wi‑Fi est excellent: monte HDR vers 30-35M.
@@ -91,10 +91,33 @@ def first(streams, t):
     return None
 
 
+def get_language(stream):
+    tags = stream.get("tags", {})
+    lang = (tags.get("language") or "").lower()
+    if lang in {"fra", "fre", "fr"}:
+        return "fr"
+    if lang in {"eng", "en"}:
+        return "en"
+    return None
+
+
 def best_audio(streams):
     a = [s for s in streams if s.get("codec_type") == "audio"]
     if not a:
         return None
+
+    # Priorite: francais > anglais > plus de canaux
+    fr_audio = [s for s in a if get_language(s) == "fr"]
+    if fr_audio:
+        fr_audio.sort(key=lambda s: int(s.get("channels") or 0), reverse=True)
+        return fr_audio[0]
+
+    en_audio = [s for s in a if get_language(s) == "en"]
+    if en_audio:
+        en_audio.sort(key=lambda s: int(s.get("channels") or 0), reverse=True)
+        return en_audio[0]
+
+    # Fallback: plus de canaux
     a.sort(key=lambda s: int(s.get("channels") or 0), reverse=True)
     return a[0]
 
