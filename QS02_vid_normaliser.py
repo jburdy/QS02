@@ -294,6 +294,13 @@ def create_md_file(
             return default
         return d.get(key, default) if isinstance(d, dict) else default
 
+    def track_name(stream: dict | None) -> str:
+        if not stream:
+            return "-"
+        tags = stream.get("tags") or {}
+        title = (tags.get("title") or "").strip()
+        return title if title else "-"
+
     def add_section(title: str, rows: list[tuple[str, str | int | None, str | int | None]]) -> None:
         lines.append(f"### {title}")
         lines.append("")
@@ -364,6 +371,11 @@ def create_md_file(
             "Audio - Track 0 (AC3)",
             [
                 (
+                    "Nom",
+                    track_name(source_audio_info),
+                    track_name(target_audio_info) if target_audio_info else "-",
+                ),
+                (
                     "Codec",
                     source_audio_info.get("codec_name", "unknown"),
                     safe_get(target_audio_info, "codec_name") if target_audio_info else "-",
@@ -404,6 +416,7 @@ def create_md_file(
         add_section(
             "Audio - Track 1 (AAC Stereo)",
             [
+                ("Nom", "-", track_name(target_aac)),
                 ("Codec", "-", target_aac.get("codec_name", "unknown")),
                 ("Canaux", "-", target_aac.get("channels", "unknown")),
                 ("Sample rate", "-", target_aac.get("sample_rate", "unknown")),
