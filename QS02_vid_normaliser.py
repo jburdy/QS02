@@ -202,7 +202,21 @@ def build_output_name(movie_title, year, resolution, hdr_tag):
     return ".".join(parts)
 
 
-def create_yaml_file(yaml_path, source_file, source_name, video_info, audio_info, streams_info, format_info):
+def create_yaml_file(
+    yaml_path,
+    source_file,
+    source_name,
+    source_video_info,
+    source_audio_info,
+    source_streams_info,
+    source_format_info,
+    target_file,
+    target_name,
+    target_video_info,
+    target_audio_info,
+    target_streams_info,
+    target_format_info,
+):
     def escape_yaml(s):
         if s is None:
             return "null"
@@ -213,83 +227,107 @@ def create_yaml_file(yaml_path, source_file, source_name, video_info, audio_info
             return f'"{escaped}"'
         return s
 
-    lines = [
-        "source_file:",
-        f"  full_name: {escape_yaml(source_name)}",
-        f"  path: {escape_yaml(str(source_file))}",
-        "",
-        "container:",
-        f"  format_name: {escape_yaml(format_info.get('format_name', 'unknown'))}",
-        f"  format_long_name: {escape_yaml(format_info.get('format_long_name', 'unknown'))}",
-        f"  duration: {format_info.get('duration', 'unknown')}",
-        f"  size: {format_info.get('size', 'unknown')}",
-        f"  bit_rate: {format_info.get('bit_rate', 'unknown')}",
-        "",
-        "video:",
-        f"  codec: {escape_yaml(video_info.get('codec_name', 'unknown'))}",
-        f"  codec_long_name: {escape_yaml(video_info.get('codec_long_name', 'unknown'))}",
-        f"  width: {video_info.get('width', 0)}",
-        f"  height: {video_info.get('height', 0)}",
-        f"  resolution: {escape_yaml(get_resolution_p(video_info))}",
-        f"  pixel_format: {escape_yaml(video_info.get('pix_fmt', 'unknown'))}",
-        f"  color_space: {escape_yaml(video_info.get('color_space', 'unknown'))}",
-        f"  color_primaries: {escape_yaml(video_info.get('color_primaries', 'unknown'))}",
-        f"  color_transfer: {escape_yaml(video_info.get('color_transfer') or video_info.get('color_trc', 'unknown'))}",
-        f"  bit_depth: {video_info.get('bits_per_raw_sample') or video_info.get('bits_per_sample', 'unknown')}",
-        f"  frame_rate: {escape_yaml(video_info.get('r_frame_rate', 'unknown'))}",
-        f"  avg_frame_rate: {escape_yaml(video_info.get('avg_frame_rate', 'unknown'))}",
-        f"  bit_rate: {video_info.get('bit_rate', 'unknown')}",
-        "",
-        "audio:",
-    ]
-
-    if audio_info:
-        lines.extend(
-            [
-                f"  codec: {escape_yaml(audio_info.get('codec_name', 'unknown'))}",
-                f"  codec_long_name: {escape_yaml(audio_info.get('codec_long_name', 'unknown'))}",
-                f"  channels: {audio_info.get('channels', 0)}",
-                f"  channel_layout: {escape_yaml(audio_info.get('channel_layout', 'unknown'))}",
-                f"  sample_rate: {audio_info.get('sample_rate', 'unknown')}",
-                f"  sample_fmt: {escape_yaml(audio_info.get('sample_fmt', 'unknown'))}",
-                f"  bit_rate: {audio_info.get('bit_rate', 'unknown')}",
-            ]
+    def add_file_section(lines, prefix, file_path, file_name, video_info, audio_info, streams_info, format_info):
+        lines.append(f"{prefix}:")
+        lines.append(f"  file:")
+        lines.append(f"    full_name: {escape_yaml(file_name)}")
+        lines.append(f"    path: {escape_yaml(str(file_path))}")
+        lines.append("")
+        lines.append(f"  container:")
+        lines.append(f"    format_name: {escape_yaml(format_info.get('format_name', 'unknown'))}")
+        lines.append(f"    format_long_name: {escape_yaml(format_info.get('format_long_name', 'unknown'))}")
+        lines.append(f"    duration: {format_info.get('duration', 'unknown')}")
+        lines.append(f"    size: {format_info.get('size', 'unknown')}")
+        lines.append(f"    bit_rate: {format_info.get('bit_rate', 'unknown')}")
+        lines.append("")
+        lines.append(f"  video:")
+        lines.append(f"    codec: {escape_yaml(video_info.get('codec_name', 'unknown'))}")
+        lines.append(f"    codec_long_name: {escape_yaml(video_info.get('codec_long_name', 'unknown'))}")
+        lines.append(f"    width: {video_info.get('width', 0)}")
+        lines.append(f"    height: {video_info.get('height', 0)}")
+        lines.append(f"    resolution: {escape_yaml(get_resolution_p(video_info))}")
+        lines.append(f"    pixel_format: {escape_yaml(video_info.get('pix_fmt', 'unknown'))}")
+        lines.append(f"    color_space: {escape_yaml(video_info.get('color_space', 'unknown'))}")
+        lines.append(f"    color_primaries: {escape_yaml(video_info.get('color_primaries', 'unknown'))}")
+        lines.append(
+            f"    color_transfer: {escape_yaml(video_info.get('color_transfer') or video_info.get('color_trc', 'unknown'))}"
         )
-    else:
-        lines.append('  codec: "none"')
+        lines.append(
+            f"    bit_depth: {video_info.get('bits_per_raw_sample') or video_info.get('bits_per_sample', 'unknown')}"
+        )
+        lines.append(f"    frame_rate: {escape_yaml(video_info.get('r_frame_rate', 'unknown'))}")
+        lines.append(f"    avg_frame_rate: {escape_yaml(video_info.get('avg_frame_rate', 'unknown'))}")
+        lines.append(f"    bit_rate: {video_info.get('bit_rate', 'unknown')}")
+        lines.append("")
+        lines.append(f"  audio:")
+        if audio_info:
+            lines.extend(
+                [
+                    f"    codec: {escape_yaml(audio_info.get('codec_name', 'unknown'))}",
+                    f"    codec_long_name: {escape_yaml(audio_info.get('codec_long_name', 'unknown'))}",
+                    f"    channels: {audio_info.get('channels', 0)}",
+                    f"    channel_layout: {escape_yaml(audio_info.get('channel_layout', 'unknown'))}",
+                    f"    sample_rate: {audio_info.get('sample_rate', 'unknown')}",
+                    f"    sample_fmt: {escape_yaml(audio_info.get('sample_fmt', 'unknown'))}",
+                    f"    bit_rate: {audio_info.get('bit_rate', 'unknown')}",
+                ]
+            )
+        else:
+            lines.append('    codec: "none"')
+        lines.append("")
+        lines.append(f"  streams:")
+        lines.append(f"    total: {len(streams_info)}")
+        for i, stream in enumerate(streams_info):
+            stream_type = stream.get("codec_type", "unknown")
+            lines.append(f"    stream_{i}:")
+            lines.append(f"      type: {escape_yaml(stream_type)}")
+            lines.append(f"      codec: {escape_yaml(stream.get('codec_name', 'unknown'))}")
+            lines.append(f"      codec_long_name: {escape_yaml(stream.get('codec_long_name', 'unknown'))}")
+            if stream_type == "video":
+                lines.append(f"      resolution: {stream.get('width', 0)}x{stream.get('height', 0)}")
+                lines.append(f"      pixel_format: {escape_yaml(stream.get('pix_fmt', 'unknown'))}")
+            elif stream_type == "audio":
+                lines.append(f"      channels: {stream.get('channels', 0)}")
+                lines.append(f"      sample_rate: {stream.get('sample_rate', 'unknown')}")
+            elif stream_type == "subtitle":
+                lines.append(f"      codec_name: {escape_yaml(stream.get('codec_name', 'unknown'))}")
 
-    lines.extend(
-        [
-            "",
-            "streams:",
-            f"  total: {len(streams_info)}",
-        ]
+    lines = []
+    add_file_section(
+        lines,
+        "source",
+        source_file,
+        source_name,
+        source_video_info,
+        source_audio_info,
+        source_streams_info,
+        source_format_info,
     )
-
-    for i, stream in enumerate(streams_info):
-        stream_type = stream.get("codec_type", "unknown")
-        lines.append(f"  stream_{i}:")
-        lines.append(f"    type: {escape_yaml(stream_type)}")
-        lines.append(f"    codec: {escape_yaml(stream.get('codec_name', 'unknown'))}")
-        lines.append(f"    codec_long_name: {escape_yaml(stream.get('codec_long_name', 'unknown'))}")
-        if stream_type == "video":
-            lines.append(f"    resolution: {stream.get('width', 0)}x{stream.get('height', 0)}")
-            lines.append(f"    pixel_format: {escape_yaml(stream.get('pix_fmt', 'unknown'))}")
-        elif stream_type == "audio":
-            lines.append(f"    channels: {stream.get('channels', 0)}")
-            lines.append(f"    sample_rate: {stream.get('sample_rate', 'unknown')}")
-        elif stream_type == "subtitle":
-            lines.append(f"    codec_name: {escape_yaml(stream.get('codec_name', 'unknown'))}")
+    lines.append("")
+    add_file_section(
+        lines,
+        "target",
+        target_file,
+        target_name,
+        target_video_info,
+        target_audio_info,
+        target_streams_info,
+        target_format_info,
+    )
 
     yaml_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, a):
+def ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, audio_streams, all_streams):
     cmd = [ffmpeg, "-hide_banner", "-y" if OVERWRITE else "-n", "-hwaccel", "cuda", "-i", str(inp)]
     cmd += ["-map", "0:v:0"]
-    if a:
-        ai = int(a["index"])
-        cmd += ["-map", f"0:a:{ai}", "-map", f"0:a:{ai}"]  # AC3 + AAC
+
+    # Map all audio streams by finding their audio index
+    all_audio_in_file = [s for s in all_streams if s.get("codec_type") == "audio"]
+    for a in audio_streams:
+        audio_idx = all_audio_in_file.index(a)
+        cmd += ["-map", f"0:a:{audio_idx}"]
+
     if KEEP_SUBS:
         cmd += ["-map", "0:s?"]
 
@@ -357,21 +395,17 @@ def ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, a):
             "bt709",
         ]
 
-    if a:
+    # Convert all audio tracks to AC3 (soundbar compatible)
+    for idx, a in enumerate(audio_streams):
         src_codec = (a.get("codec_name") or "").lower()
         ch = int(a.get("channels") or 0)
 
-        # Track 0: AC3 (soundbar)
+        # If already AC3 with compatible channels, copy
         if src_codec == "ac3" and ch in {2, 6}:
-            cmd += ["-c:a:0", "copy"]
+            cmd += [f"-c:a:{idx}", "copy"]
         else:
-            cmd += ["-c:a:0", "ac3", "-b:a:0", AC3_BITRATE, "-ac:a:0", ("6" if ch >= 6 else "2")]
-
-        # Track 1: AAC stereo (headphones)
-        if src_codec == "aac" and ch == 2:
-            cmd += ["-c:a:1", "copy"]
-        else:
-            cmd += ["-c:a:1", "aac", "-b:a:1", AAC_BITRATE, "-ac:a:1", "2"]
+            # Convert to AC3
+            cmd += [f"-c:a:{idx}", "ac3", f"-b:a:{idx}", AC3_BITRATE, f"-ac:a:{idx}", ("6" if ch >= 6 else "2")]
 
     if KEEP_SUBS:
         cmd += ["-c:s", "copy"]
@@ -405,7 +439,9 @@ def main():
     if not v:
         raise SystemExit(f"SKIP (no video): {inp}")
 
-    a = best_audio(streams)
+    # Get all audio streams - convert all non-AC3 to AC3
+    audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+
     hdr, trc = is_hdr(v)
     tag = "HDR" if hdr else "SDR"
 
@@ -424,16 +460,38 @@ def main():
         print(f"SKIP (exists): {outp}")
         return
 
-    cmd = ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, a)
+    cmd = ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, audio_streams, streams)
     print(f"\nIN  : {inp}\nOUT : {outp}\nMODE: {tag} (trc={trc})")
+    print(f"AUDIO TRACKS: {len(audio_streams)}")
     if DRY_RUN:
         print("CMD:", " ".join(cmd))
         return
     if subprocess.run(cmd).returncode != 0:
         raise SystemExit(f"FAILED: {inp}")
 
+    # Analyze target file after successful encoding
+    target_streams, target_format_info = probe(ffprobe, outp)
+    target_v = first(target_streams, "video")
+    if not target_v:
+        raise SystemExit(f"SKIP (no video in target): {outp}")
+    target_a = first(target_streams, "audio")
+
     # Create YAML file after successful encoding
-    create_yaml_file(yaml_path, inp, inp.name, v, a, streams, format_info)
+    create_yaml_file(
+        yaml_path,
+        inp,
+        inp.name,
+        v,
+        audio_streams[0] if audio_streams else None,
+        streams,
+        format_info,
+        outp,
+        outp.name,
+        target_v,
+        target_a,
+        target_streams,
+        target_format_info,
+    )
     print(f"YAML: {yaml_path}")
 
 
