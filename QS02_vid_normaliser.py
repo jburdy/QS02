@@ -5,15 +5,14 @@ QS02 + Jellyfin (Wi-Fi) : transcodage "Direct Play friendly" via NVENC (RTX 4070
 
 But :
 - Détecter SDR/HDR avec ffprobe.
-- Encoder en HEVC NVENC:
-    - HDR -> HEVC Main10 10-bit (p010le) + tags BT.2020 + PQ/HLG.
-    - SDR -> HEVC 8-bit (yuv420p) + tags BT.709.
+- Encoder en AV1 NVENC:
+    - HDR -> AV1 10-bit (p010le) + tags BT.2020 + PQ/HLG.
+    - SDR -> AV1 8-bit (yuv420p) + tags BT.709.
 - Audio:
     - Track 0 : AC3 (Dolby Digital) 5.1 ou 2.0 (HT-S40R friendly).
     - Track 1 : AAC stéréo (casque / compat universelle, y compris XM6).
     - Les deux pistes sont générées systématiquement à partir de la meilleure piste source.
-- Plafond bitrate (maxrate/bufsize) = limite les "pics" pour streaming Wi-Fi.
-  La qualité reste pilotée par CQ (constant quality) côté NVENC.
+- Contrôle bitrate VBR avec bitrate cible + plafond (maxrate/bufsize) pour streaming Wi-Fi.
 
 Modifie uniquement la section CONFIG.
 """
@@ -37,11 +36,13 @@ VIDEO_EXTS = {".mkv", ".mp4", ".m4v", ".mov"}
 
 GPU_INDEX = 0
 
-# NVENC qualité:
-# - NVENC_CQ plus bas = meilleure qualité (fichier + gros), plus haut = + petit.
-#   Valeurs courantes: 18 (très propre), 19-21 (bon "streamable"), 22+ (agressif).
+# AV1 NVENC qualité:
+# - VBR avec bitrate cible pour contrôler la qualité.
+# - Bitrate cible HDR: 12-15M recommandé pour 4K HDR.
+# - Bitrate cible SDR: 8-10M recommandé pour 4K SDR.
 NVENC_PRESET = "slow"  # alternatives: "medium" si tu veux aller plus vite.
-NVENC_CQ = 20
+BITRATE_HDR = "12M"  # Bitrate cible pour HDR
+BITRATE_SDR = "8M"  # Bitrate cible pour SDR
 
 # Plafonds "Wi‑Fi friendly" (limite les pointes, évite les buffers):
 # - Si ton Wi‑Fi est excellent: monte HDR vers 30-35M.
@@ -82,7 +83,7 @@ def need(binname: str) -> str:
 
 def has_nvenc(ffmpeg: str) -> bool:
     rc, out, _ = cap([ffmpeg, "-hide_banner", "-encoders"])
-    return rc == 0 and "hevc_nvenc" in out
+    return rc == 0 and "av1_nvenc" in out
 
 
 def probe(ffprobe: str, f: Path) -> tuple[list[dict], dict]:
@@ -439,35 +440,23 @@ def ffmpeg_cmd(
     cmd += ["-map_metadata", "0", "-map_chapters", "0"]
     cmd += [
         "-c:v",
-        "hevc_nvenc",
+        "av1_nvenc",
         "-gpu",
         str(GPU_INDEX),
         "-preset",
         NVENC_PRESET,
         "-rc:v",
         "vbr",
-        "-cq:v",
-        str(NVENC_CQ),
-        "-b:v",
-        "0",
-        "-spatial_aq",
-        "1",
-        "-temporal_aq",
-        "1",
-        "-aq-strength",
-        "8",
-        "-rc-lookahead",
-        "32",
     ]
 
     if hdr:
         cmd += [
+            "-b:v",
+            BITRATE_HDR,
             "-maxrate:v",
             MAXRATE_HDR,
             "-bufsize:v",
             BUFSIZE_HDR,
-            "-profile:v",
-            "main10",
             "-pix_fmt",
             "p010le",
             "-color_primaries",
@@ -477,19 +466,14 @@ def ffmpeg_cmd(
             "-color_trc",
             trc,
         ]
-        transfer_num = "18" if trc == "arib-std-b67" else "16"  # HLG=18, PQ=16
-        cmd += [
-            "-bsf:v",
-            f"hevc_metadata=colour_primaries=9:transfer_characteristics={transfer_num}:matrix_coefficients=9",
-        ]
     else:
         cmd += [
+            "-b:v",
+            BITRATE_SDR,
             "-maxrate:v",
             MAXRATE_SDR,
             "-bufsize:v",
             BUFSIZE_SDR,
-            "-profile:v",
-            "main",
             "-pix_fmt",
             "yuv420p",
             "-color_primaries",
@@ -538,7 +522,7 @@ def main() -> None:
     ffmpeg = need("ffmpeg")
     ffprobe = need("ffprobe")
     if not has_nvenc(ffmpeg):
-        raise SystemExit("ERROR: hevc_nvenc non disponible (ffmpeg sans NVENC).")
+        raise SystemExit("ERROR: av1_nvenc non disponible (ffmpeg sans NVENC AV1).")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     inp = inp_path.resolve()

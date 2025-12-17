@@ -13,10 +13,10 @@ Ce document décrit les spécifications techniques et les directives de fonction
 
 ## 2. Environnement Matériel Requis
 
-*   **Encodage** : PC avec GPU NVIDIA (Architecture Turing ou plus récente recommandée, ex: RTX 4070) supportant NVENC HEVC.
+*   **Encodage** : PC avec GPU NVIDIA (Architecture Ada Lovelace ou plus récente recommandée, ex: RTX 4070) supportant NVENC AV1.
 *   **Logiciels** : 
     *   Python 3.13+
-    *   FFmpeg (compilé avec support `hevc_nvenc`)
+    *   FFmpeg (compilé avec support `av1_nvenc`)
     *   FFprobe
 *   **Périphériques Audio Cibles** :
     *   **Sony HT-S40R** (via HDMI ARC) : Nécessite du **Dolby Digital (AC3)** 5.1.
@@ -24,7 +24,7 @@ Ce document décrit les spécifications techniques et les directives de fonction
 
 ## 3. Spécifications de Traitement Vidéo
 
-Le script utilise `hevc_nvenc` pour un encodage rapide et efficace.
+Le script utilise `av1_nvenc` pour un encodage rapide et efficace avec une meilleure compression que HEVC.
 
 ### 3.1. Détection HDR/SDR
 Le script analyse les métadonnées (`color_transfer` / `color_trc`) via `ffprobe` avant encodage.
@@ -35,17 +35,18 @@ Le script analyse les métadonnées (`color_transfer` / `color_trc`) via `ffprob
 
 | Paramètre | Valeur SDR | Valeur HDR | Justification |
 | :--- | :--- | :--- | :--- |
-| **Codec** | `hevc_nvenc` | `hevc_nvenc` | Standard 4K efficace supporté par QS02. |
-| **Profile** | `main` | `main10` | 10-bit obligatoire pour HDR. |
+| **Codec** | `av1_nvenc` | `av1_nvenc` | Standard moderne avec meilleure compression que HEVC, supporté par QS02. |
 | **Pix Fmt** | `yuv420p` | `p010le` | Format pixel 8-bit vs 10-bit. |
 | **Colorimetrie** | BT.709 | BT.2020 / BT.2020nc | Espace couleur standard vs large gamut. |
 | **Transfert** | BT.709 | SMPTE2084 (PQ) ou HLG | Courbe gamma vs HDR. |
-| **Metadata** | - | `hevc_metadata` BSF | Force l'écriture des métadonnées HDR dans le flux pour déclencher le mode HDR du projecteur. |
+| **Bitrate cible** | 8M | 12M | Contrôle qualité moyenne en mode VBR. |
 
 ### 3.3. Gestion du Débit (Rate Control)
-Utilisation du mode **VBR** piloté par la qualité (`-cq`), mais avec un **plafond strict** (`-maxrate`, `-bufsize`) pour le Wi-Fi.
+Utilisation du mode **VBR** avec bitrate cible (`-b:v`), et un **plafond strict** (`-maxrate`, `-bufsize`) pour le Wi-Fi.
 
-*   **Qualité cible** : `CQ = 19` (Preset `slow`).
+*   **Bitrate cible** : 
+    *   **HDR** : **12 Mbps** (Preset `slow`)
+    *   **SDR** : **8 Mbps** (Preset `slow`)
 *   **Plafonds (Wi-Fi Friendly)** :
     *   **HDR** : Maxrate **25 Mbps** / Bufsize **50 Mbps**.
     *   **SDR** : Maxrate **15 Mbps** / Bufsize **30 Mbps**.
@@ -94,7 +95,7 @@ Le script génère systématiquement **deux pistes audio** pour couvrir tous les
 Les variables suivantes en tête de script permettent d'ajuster le comportement sans toucher au code logique :
 
 *   `IN_DIR` / `OUT_DIR` : Dossiers de travail.
-*   `NVENC_CQ` : Ajustement global de la qualité (plus bas = meilleure qualité, plus lourd).
+*   `BITRATE_HDR` / `BITRATE_SDR` : Ajustement du bitrate cible (plus élevé = meilleure qualité, plus lourd).
 *   `MAXRATE_HDR` / `SDR` : À ajuster selon la performance réelle du réseau Wi-Fi.
 *   `KEEP_SUBS` : Passer à `True` seulement si les clients supportent les sous-titres sans transcodage (ex: SRT simple).
 

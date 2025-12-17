@@ -1,6 +1,6 @@
-# Parametres FFmpeg - QS02 Video Normaliser
+# Parametres FFmpeg - QS02 Video Normaliser (AV1 NVENC)
 
-Ce document explique et justifie tous les parametres FFmpeg utilises dans `QS02_vid_normaliser.py`.
+Ce document explique et justifie tous les parametres FFmpeg utilises dans `QS02_vid_normaliser.py` pour l'encodage AV1 via NVENC.
 
 ## Parametres generaux
 
@@ -49,9 +49,9 @@ Le comportement est controle par la variable `OVERWRITE` dans la config.
 
 ## Parametres video - Codec NVENC
 
-### `-c:v hevc_nvenc`
-**Valeur:** `hevc_nvenc`  
-**Justification:** Utilise l'encodeur HEVC (H.265) materiel NVIDIA. Beaucoup plus rapide que l'encodage logiciel (x265) tout en offrant une excellente qualite. Ideal pour transcoder rapidement de gros volumes de videos.
+### `-c:v av1_nvenc`
+**Valeur:** `av1_nvenc`  
+**Justification:** Utilise l'encodeur AV1 materiel NVIDIA. Beaucoup plus rapide que l'encodage logiciel (libaom) tout en offrant une excellente qualite et une meilleure compression que HEVC. Ideal pour transcoder rapidement de gros volumes de videos avec une meilleure efficacite de compression.
 
 ### `-gpu <index>`
 **Valeur:** `GPU_INDEX` (par defaut: 0)  
@@ -68,33 +68,14 @@ Le comportement est controle par la variable `OVERWRITE` dans la config.
 **Valeur:** `vbr` (Variable Bitrate)  
 **Justification:** Mode de controle de debit variable. Permet au codec d'ajuster le bitrate selon la complexite de chaque scene. Plus efficace que CBR (Constant Bitrate) pour la qualite visuelle.
 
-### `-cq:v <valeur>`
-**Valeur:** `NVENC_CQ` (par defaut: 20)  
-**Justification:** Constant Quality factor. Controle la qualite visuelle:
-- Valeurs plus basses (18-19) = meilleure qualite, fichiers plus gros
-- Valeurs moyennes (20-21) = bon compromis pour streaming Wi-Fi
-- Valeurs plus hautes (22+) = fichiers plus petits, qualite reduite
-C'est le parametre principal qui controle la qualite finale.
-
-### `-b:v 0`
-**Valeur:** `0`  
-**Justification:** Desactive le bitrate cible explicite. Avec `-cq:v`, le bitrate est controle par la qualite constante (CQ), pas par un bitrate fixe. Le `0` indique a FFmpeg d'utiliser uniquement le mode CQ.
-
-### `-spatial_aq 1`
-**Valeur:** `1` (active)  
-**Justification:** Active la quantification adaptative spatiale. Le codec ajuste la quantisation selon la complexite spatiale de chaque frame. Ameliore la qualite visuelle en allouant plus de bits aux zones complexes.
-
-### `-temporal_aq 1`
-**Valeur:** `1` (active)  
-**Justification:** Active la quantification adaptative temporelle. Le codec ajuste la quantisation selon les differences entre frames successives. Ameliore la qualite dans les scenes avec beaucoup de mouvement.
-
-### `-aq-strength 8`
-**Valeur:** `8`  
-**Justification:** Force de la quantification adaptative (0-15). Valeur moyenne qui equilibre qualite et taille de fichier. Plus elevee = meilleure qualite mais fichiers plus gros.
-
-### `-rc-lookahead 32`
-**Valeur:** `32` frames  
-**Justification:** Nombre de frames a analyser a l'avance pour optimiser l'encodage. Permet au codec de mieux repartir les bits entre les frames. Plus eleve = meilleure qualite mais plus de memoire utilisee. 32 est un bon compromis.
+### `-b:v <valeur>`
+**Valeur:** 
+- HDR: `BITRATE_HDR` (par defaut: "12M")
+- SDR: `BITRATE_SDR` (par defaut: "8M")  
+**Justification:** Bitrate cible pour l'encodage VBR. AV1 NVENC utilise un mode VBR avec bitrate cible plutot qu'un mode CQ. Le bitrate cible controle la qualite moyenne:
+- HDR 4K: 12-15M recommandé pour une bonne qualité
+- SDR 4K: 8-10M recommandé pour une bonne qualité
+Le codec ajustera le bitrate autour de cette cible selon la complexité de la scène.
 
 ## Parametres video - Bitrate (Wi-Fi friendly)
 
@@ -112,9 +93,9 @@ C'est le parametre principal qui controle la qualite finale.
 
 ## Parametres video - HDR
 
-### `-profile:v main10` (HDR uniquement)
-**Valeur:** `main10` pour HDR  
-**Justification:** Profile HEVC Main10 necessaire pour encoder en 10-bit. Requis pour preserver la profondeur de couleur HDR (10 bits par canal).
+### `-pix_fmt p010le` (HDR uniquement)
+**Valeur:** `p010le` pour HDR  
+**Justification:** Format pixel 10-bit planar YUV avec ordre little-endian. Format standard pour HDR 10-bit. Preserve toute la dynamique HDR. AV1 supporte nativement le 10-bit sans besoin de profil specifique.
 
 ### `-pix_fmt p010le` (HDR uniquement)
 **Valeur:** `p010le` pour HDR  
@@ -135,20 +116,9 @@ C'est le parametre principal qui controle la qualite finale.
 **Justification:** Caracteristiques de transfert (transfer characteristics). Definit la courbe de transfert pour le mapping HDR:
 - PQ (SMPTE ST 2084): Standard HDR10, optimise pour ecrans HDR
 - HLG: Compatible avec les ecrans SDR et HDR
-
-### `-bsf:v hevc_metadata=...` (HDR uniquement)
-**Valeur:** `hevc_metadata=colour_primaries=9:transfer_characteristics=<16|18>:matrix_coefficients=9`  
-**Justification:** Bitstream filter qui injecte les metadonnees HDR directement dans le flux HEVC:
-- `colour_primaries=9`: BT.2020 (valeur standardisee)
-- `transfer_characteristics=16`: PQ (SMPTE ST 2084) ou `18`: HLG
-- `matrix_coefficients=9`: BT.2020 non-constant luminance
-Ces metadonnees sont essentielles pour que les lecteurs affichent correctement les couleurs HDR.
+AV1 supporte nativement ces metadonnees HDR via les parametres de couleur standards, sans besoin de bitstream filter specifique.
 
 ## Parametres video - SDR
-
-### `-profile:v main` (SDR uniquement)
-**Valeur:** `main` pour SDR  
-**Justification:** Profile HEVC Main 8-bit. Suffisant pour SDR qui n'a besoin que de 8 bits par canal.
 
 ### `-pix_fmt yuv420p` (SDR uniquement)
 **Valeur:** `yuv420p` pour SDR  
@@ -209,14 +179,15 @@ La barre de son HT-S40R supporte les deux configurations.
 
 ### `<chemin_sortie>`
 **Valeur:** Chemin vers le fichier .mkv de sortie  
-**Justification:** Format MKV (Matroska) choisi pour sa flexibilite et son support des metadonnees HDR. Format container ideal pour HEVC avec HDR.
+**Justification:** Format MKV (Matroska) choisi pour sa flexibilite et son support des metadonnees HDR. Format container ideal pour AV1 avec HDR.
 
 ## Resume des choix techniques
 
-### Pourquoi NVENC HEVC?
+### Pourquoi NVENC AV1?
 - Encodage materiel tres rapide (RTX 4070)
-- Excellente qualite avec CQ
+- Meilleure compression que HEVC pour une qualite equivalente
 - Support natif HDR 10-bit
+- Format moderne avec meilleur support a long terme
 
 ### Pourquoi deux pistes audio?
 - AC3 5.1: Pour la barre de son HT-S40R via HDMI ARC
@@ -224,13 +195,14 @@ La barre de son HT-S40R supporte les deux configurations.
 
 ### Pourquoi plafonner le bitrate?
 - Streaming Wi-Fi: Evite les buffers lors des pointes de debit
-- VBR + CQ: Qualite constante avec bitrate moyen raisonnable
+- VBR avec bitrate cible: Qualite constante avec bitrate moyen controle
 - Maxrate/Bufsize: Limite les pics pour un streaming fluide
 
 ### Pourquoi des metadonnees HDR explicites?
 - Tags dans le flux: Garantit la compatibilite avec tous les lecteurs
 - BT.2020 + PQ/HLG: Standards HDR correctement identifies
 - Direct Play: Jellyfin peut lire directement sans transcodage
+- AV1 supporte nativement ces metadonnees sans bitstream filter specifique
 
 ### Pourquoi pas de sous-titres par defaut?
 - Direct Play: Certains formats de sous-titres declenchent le transcodage dans Jellyfin
