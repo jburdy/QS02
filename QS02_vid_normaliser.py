@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 #!/usr/bin/env python3
 """
-QS02 + Jellyfin (Wi‑Fi) : transcodage "Direct Play friendly" via NVENC (RTX 4070)
+QS02 + Jellyfin (Wi-Fi) : transcodage "Direct Play friendly" via NVENC (RTX 4070)
 
 But :
 - Détecter SDR/HDR avec ffprobe.
@@ -9,17 +9,24 @@ But :
     - HDR -> HEVC Main10 10-bit (p010le) + tags BT.2020 + PQ/HLG.
     - SDR -> HEVC 8-bit (yuv420p) + tags BT.709.
 - Audio:
-    - Track 0 : AC3 (Dolby Digital) 5.1 ou 2.0 (HT‑S40R friendly).
+    - Track 0 : AC3 (Dolby Digital) 5.1 ou 2.0 (HT-S40R friendly).
     - Track 1 : AAC stéréo (casque / compat universelle, y compris XM6).
     - Les deux pistes sont générées systématiquement à partir de la meilleure piste source.
-- Plafond bitrate (maxrate/bufsize) = limite les "pics" pour streaming Wi‑Fi.
+- Plafond bitrate (maxrate/bufsize) = limite les "pics" pour streaming Wi-Fi.
   La qualité reste pilotée par CQ (constant quality) côté NVENC.
 
 Modifie uniquement la section CONFIG.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
-import json, re, shutil, subprocess, sys
+import json
+import math
+import re
+import shutil
+import subprocess
+import sys
 
 # =========================
 # CONFIG (MODIFIER ICI)
@@ -61,24 +68,24 @@ DRY_RUN = False  # True = affiche juste les commandes
 HDR_TRCS = {"smpte2084", "arib-std-b67"}  # PQ / HLG
 
 
-def cap(cmd):
-    p = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+def cap(cmd: list[str]) -> tuple[int, str, str]:
+    p = subprocess.run(cmd, capture_output=True, text=True)
     return p.returncode, p.stdout, p.stderr
 
 
-def need(binname):
+def need(binname: str) -> str:
     p = shutil.which(binname)
     if not p:
         raise SystemExit(f"ERROR: '{binname}' introuvable dans PATH")
     return p
 
 
-def has_nvenc(ffmpeg):
+def has_nvenc(ffmpeg: str) -> bool:
     rc, out, _ = cap([ffmpeg, "-hide_banner", "-encoders"])
     return rc == 0 and "hevc_nvenc" in out
 
 
-def probe(ffprobe, f):
+def probe(ffprobe: str, f: Path) -> tuple[list[dict], dict]:
     rc, out, err = cap([ffprobe, "-v", "error", "-print_format", "json", "-show_format", "-show_streams", str(f)])
     if rc != 0:
         raise RuntimeError(f"ffprobe failed: {f}\n{err}")
@@ -86,14 +93,11 @@ def probe(ffprobe, f):
     return data.get("streams", []), data.get("format", {})
 
 
-def first(streams, t):
-    for s in streams:
-        if s.get("codec_type") == t:
-            return s
-    return None
+def first(streams: list[dict], t: str) -> dict | None:
+    return next((s for s in streams if s.get("codec_type") == t), None)
 
 
-def get_language(stream):
+def get_language(stream: dict) -> str | None:
     tags = stream.get("tags", {})
     lang = (tags.get("language") or "").lower()
     if lang in {"fra", "fre", "fr"}:
@@ -103,7 +107,7 @@ def get_language(stream):
     return None
 
 
-def best_audio(streams):
+def best_audio(streams: list[dict]) -> dict | None:
     a = [s for s in streams if s.get("codec_type") == "audio"]
     if not a:
         return None
@@ -124,7 +128,7 @@ def best_audio(streams):
     return a[0]
 
 
-def is_hdr(video):
+def is_hdr(video: dict) -> tuple[bool, str]:
     trc = (video.get("color_transfer") or video.get("color_trc") or "").strip()
     if trc in HDR_TRCS:
         return True, trc
@@ -136,7 +140,7 @@ def is_hdr(video):
     return False, "bt709"
 
 
-def get_resolution_p(video):
+def get_resolution_p(video: dict) -> str:
     width = int(video.get("width") or 0)
     height = int(video.get("height") or 0)
     if height > 0:
@@ -144,27 +148,28 @@ def get_resolution_p(video):
     return ""
 
 
-def clean_filename(name):
-    # Remove common technical info patterns
-    patterns = [
-        r"\b(HEVC|H\.264|H264|AVC|X264|X265|H\.265|H265)\b",
-        r"\b(10bit|8bit|10-bit|8-bit)\b",
-        r"\b(DTS|DTS-HD|DTSHD|TrueHD|EAC3|E-AC3|AC3|AAC|FLAC|MP3)\b",
-        r"\b(BluRay|Blu-Ray|BDRip|BDR|WEBRip|WEB-DL|WEB|HDTV|DVDRip|DVD)\b",
-        r"\b(REMUX|Remux|REMASTERED|Remastered)\b",
-        r"\b(2160p|1080p|720p|480p|4K|UHD)\b",
-        r"\b(HDR|HDR10|HDR10\+|DV|Dolby Vision|HLG)\b",
-        r"\b(x264|x265|X264|X265)\b",
-        r"\b(DD\+|DD5\.1|DD7\.1|5\.1|7\.1|2\.0)\b",
-        r"\b(AMZN|NF|HMAX|Hulu|iTunes|iT)\b",
-        # Remove brackets/parens only if they contain technical keywords
-        r"\[(?:HEVC|H\.264|H264|AVC|X264|X265|H\.265|H265|10bit|8bit|DTS|TrueHD|EAC3|AC3|BluRay|BDRip|WEBRip|REMUX|2160p|1080p|720p|4K|UHD|HDR|HDR10|DV|HLG|x264|x265)\w*\]",
-        r"\((?:HEVC|H\.264|H264|AVC|X264|X265|H\.265|H265|10bit|8bit|DTS|TrueHD|EAC3|AC3|BluRay|BDRip|WEBRip|REMUX|2160p|1080p|720p|4K|UHD|HDR|HDR10|DV|HLG|x264|x265)\w*\)",
-    ]
-    cleaned = name
-    for pattern in patterns:
-        cleaned = re.sub(pattern, "", cleaned, flags=re.IGNORECASE)
-    # Clean up multiple spaces and dots
+def clean_filename(name: str) -> str:
+    # Technical keywords to remove (case-insensitive)
+    tech_keywords = (
+        r"HEVC|H\.?264|H264|AVC|X264|X265|H\.?265|H265|"
+        r"10[- ]?bit|8[- ]?bit|"
+        r"DTS(?:-HD)?|DTSHD|TrueHD|E[- ]?AC3|AC3|AAC|FLAC|MP3|"
+        r"Blu[- ]?Ray|BDRip|BDR|WEB[- ]?Rip|WEB[- ]?DL|WEB|HDTV|DVD[- ]?Rip|DVD|"
+        r"REMUX|REMASTERED|MULTI|"
+        r"2160p|1080p|720p|480p|4K|UHD|"
+        r"HDR10?\+?|DV|Dolby\s+Vision|HLG|"
+        r"DD\+|DD5\.1|DD7\.1|5\.1|7\.1|2\.0|"
+        r"AMZN|NF|HMAX|Hulu|iTunes|iT"
+    )
+
+    # Remove technical keywords with word boundaries
+    cleaned = re.sub(rf"\b({tech_keywords})\b", "", name, flags=re.IGNORECASE)
+
+    # Remove brackets/parens containing technical keywords
+    cleaned = re.sub(rf"\[({tech_keywords})\w*\]", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(rf"\(({tech_keywords})\w*\)", "", cleaned, flags=re.IGNORECASE)
+
+    # Clean up multiple spaces, dots, and trim
     cleaned = re.sub(r"\s+", " ", cleaned)
     cleaned = re.sub(r"\.+", ".", cleaned)
     cleaned = re.sub(r"[\.\s]+$", "", cleaned)
@@ -172,7 +177,7 @@ def clean_filename(name):
     return cleaned.strip()
 
 
-def extract_movie_info(filename):
+def extract_movie_info(filename: str) -> tuple[str, str | None]:
     stem = Path(filename).stem
     # Try to extract year (4 digits between 1900-2100)
     year_match = re.search(r"\b(19|20)\d{2}\b", stem)
@@ -193,7 +198,7 @@ def extract_movie_info(filename):
     return cleaned, year
 
 
-def build_output_name(movie_title, year, resolution, hdr_tag):
+def build_output_name(movie_title: str, year: str | None, resolution: str, hdr_tag: str) -> str:
     parts = [movie_title]
     if year:
         parts.append(year)
@@ -204,123 +209,219 @@ def build_output_name(movie_title, year, resolution, hdr_tag):
     return ".".join(parts)
 
 
-def create_yaml_file(
-    yaml_path,
-    source_file,
-    source_name,
-    source_video_info,
-    source_audio_info,
-    source_streams_info,
-    source_format_info,
-    target_file,
-    target_name,
-    target_video_info,
-    target_audio_info,
-    target_streams_info,
-    target_format_info,
-):
-    def escape_yaml(s):
-        if s is None:
-            return "null"
-        s = str(s)
-        # Escape quotes and wrap in quotes if contains special chars
-        if any(c in s for c in [":", "#", "|", ">", "&", "*", "!", "%", "@", "`", '"', "'"]):
-            escaped = s.replace("\\", "\\\\").replace('"', '\\"')
-            return f'"{escaped}"'
-        return s
+def find_available_filename(base_path: Path) -> Path:
+    if not base_path.exists():
+        return base_path
+    stem = base_path.stem
+    suffix = base_path.suffix
+    parent = base_path.parent
+    counter = 1
+    while True:
+        new_name = f"{stem}.{counter}{suffix}"
+        new_path = parent / new_name
+        if not new_path.exists():
+            return new_path
+        counter += 1
 
-    def add_file_section(lines, prefix, file_path, file_name, video_info, audio_info, streams_info, format_info):
-        lines.append(f"{prefix}:")
-        lines.append(f"  file:")
-        lines.append(f"    full_name: {escape_yaml(file_name)}")
-        lines.append(f"    path: {escape_yaml(str(file_path))}")
-        lines.append("")
-        lines.append(f"  container:")
-        lines.append(f"    format_name: {escape_yaml(format_info.get('format_name', 'unknown'))}")
-        lines.append(f"    format_long_name: {escape_yaml(format_info.get('format_long_name', 'unknown'))}")
-        lines.append(f"    duration: {format_info.get('duration', 'unknown')}")
-        lines.append(f"    size: {format_info.get('size', 'unknown')}")
-        lines.append(f"    bit_rate: {format_info.get('bit_rate', 'unknown')}")
-        lines.append("")
-        lines.append(f"  video:")
-        lines.append(f"    codec: {escape_yaml(video_info.get('codec_name', 'unknown'))}")
-        lines.append(f"    codec_long_name: {escape_yaml(video_info.get('codec_long_name', 'unknown'))}")
-        lines.append(f"    width: {video_info.get('width', 0)}")
-        lines.append(f"    height: {video_info.get('height', 0)}")
-        lines.append(f"    resolution: {escape_yaml(get_resolution_p(video_info))}")
-        lines.append(f"    pixel_format: {escape_yaml(video_info.get('pix_fmt', 'unknown'))}")
-        lines.append(f"    color_space: {escape_yaml(video_info.get('color_space', 'unknown'))}")
-        lines.append(f"    color_primaries: {escape_yaml(video_info.get('color_primaries', 'unknown'))}")
-        lines.append(
-            f"    color_transfer: {escape_yaml(video_info.get('color_transfer') or video_info.get('color_trc', 'unknown'))}"
-        )
-        lines.append(
-            f"    bit_depth: {video_info.get('bits_per_raw_sample') or video_info.get('bits_per_sample', 'unknown')}"
-        )
-        lines.append(f"    frame_rate: {escape_yaml(video_info.get('r_frame_rate', 'unknown'))}")
-        lines.append(f"    avg_frame_rate: {escape_yaml(video_info.get('avg_frame_rate', 'unknown'))}")
-        lines.append(f"    bit_rate: {video_info.get('bit_rate', 'unknown')}")
-        lines.append("")
-        lines.append(f"  audio:")
-        if audio_info:
-            lines.extend(
-                [
-                    f"    codec: {escape_yaml(audio_info.get('codec_name', 'unknown'))}",
-                    f"    codec_long_name: {escape_yaml(audio_info.get('codec_long_name', 'unknown'))}",
-                    f"    channels: {audio_info.get('channels', 0)}",
-                    f"    channel_layout: {escape_yaml(audio_info.get('channel_layout', 'unknown'))}",
-                    f"    sample_rate: {audio_info.get('sample_rate', 'unknown')}",
-                    f"    sample_fmt: {escape_yaml(audio_info.get('sample_fmt', 'unknown'))}",
-                    f"    bit_rate: {audio_info.get('bit_rate', 'unknown')}",
-                ]
-            )
+
+def format_value(val: str | None) -> str:
+    if val is None or val == "unknown":
+        return "-"
+    return str(val)
+
+
+def format_size(size_bytes: str | int | None) -> str:
+    if size_bytes == "unknown" or size_bytes is None:
+        return "-"
+    try:
+        size = int(size_bytes)
+        if size == 0:
+            return "0 B"
+        units = ["B", "KB", "MB", "GB", "TB", "PB"]
+        exp = int(math.log(size, 1024))
+        exp = min(exp, len(units) - 1)
+        size_fmt = size / (1024.0**exp)
+        return f"{size_fmt:.2f} {units[exp]}"
+    except (ValueError, TypeError):
+        return str(size_bytes)
+
+
+def format_bitrate(bitrate: str | int | None) -> str:
+    if bitrate == "unknown" or bitrate is None:
+        return "-"
+    try:
+        br = int(bitrate)
+        if br < 1000:
+            return f"{br} b/s"
+        elif br < 1000000:
+            return f"{br/1000:.1f} kb/s"
         else:
-            lines.append('    codec: "none"')
+            return f"{br/1000000:.2f} Mb/s"
+    except (ValueError, TypeError):
+        return str(bitrate)
+
+
+def create_md_file(
+    md_path: Path,
+    source_file: Path,
+    source_name: str,
+    source_video_info: dict,
+    source_audio_info: dict | None,
+    source_streams_info: list[dict],
+    source_format_info: dict,
+    target_file: Path,
+    target_name: str,
+    target_video_info: dict | None,
+    target_audio_info: dict | None,
+    target_streams_info: list[dict],
+    target_format_info: dict,
+) -> None:
+    lines: list[str] = []
+
+    def add_row(prop: str, src_val: str | int | None, tgt_val: str | int | None) -> None:
+        src_str = format_value(src_val)
+        tgt_str = format_value(tgt_val)
+        changed = "Y" if src_str != tgt_str and tgt_str != "-" else "N"
+        lines.append(f"| {prop} | {src_str} | {tgt_str} | {changed} |")
+
+    def start_table() -> None:
+        lines.append("| Propriete | Source | Cible | Change |")
+        lines.append("|-----------|--------|-------|--------|")
+
+    def safe_get(d: dict | None, key: str, default: str = "unknown") -> str:
+        if d is None:
+            return default
+        return d.get(key, default) if isinstance(d, dict) else default
+
+    def add_section(title: str, rows: list[tuple[str, str | int | None, str | int | None]]) -> None:
+        lines.append(f"### {title}")
         lines.append("")
-        lines.append(f"  streams:")
-        lines.append(f"    total: {len(streams_info)}")
-        for i, stream in enumerate(streams_info):
-            stream_type = stream.get("codec_type", "unknown")
-            lines.append(f"    stream_{i}:")
-            lines.append(f"      type: {escape_yaml(stream_type)}")
-            lines.append(f"      codec: {escape_yaml(stream.get('codec_name', 'unknown'))}")
-            lines.append(f"      codec_long_name: {escape_yaml(stream.get('codec_long_name', 'unknown'))}")
-            if stream_type == "video":
-                lines.append(f"      resolution: {stream.get('width', 0)}x{stream.get('height', 0)}")
-                lines.append(f"      pixel_format: {escape_yaml(stream.get('pix_fmt', 'unknown'))}")
-            elif stream_type == "audio":
-                lines.append(f"      channels: {stream.get('channels', 0)}")
-                lines.append(f"      sample_rate: {stream.get('sample_rate', 'unknown')}")
-            elif stream_type == "subtitle":
-                lines.append(f"      codec_name: {escape_yaml(stream.get('codec_name', 'unknown'))}")
+        start_table()
+        for prop, src_val, tgt_val in rows:
+            add_row(prop, src_val, tgt_val)
+        lines.append("")
 
-    lines = []
-    add_file_section(
-        lines,
-        "source",
-        source_file,
-        source_name,
-        source_video_info,
-        source_audio_info,
-        source_streams_info,
-        source_format_info,
-    )
-    lines.append("")
-    add_file_section(
-        lines,
-        "target",
-        target_file,
-        target_name,
-        target_video_info,
-        target_audio_info,
-        target_streams_info,
-        target_format_info,
+    lines.extend(
+        [
+            "# Comparaison Source / Cible",
+            "",
+            f"**Source:** `{source_name}`",
+            f"**Cible:** `{target_name}`",
+            "",
+            "## Tableau de comparaison",
+            "",
+        ]
     )
 
-    yaml_path.write_text("\n".join(lines), encoding="utf-8")
+    # Container
+    add_section(
+        "Container",
+        [
+            ("Format", source_format_info.get("format_name", "unknown"), safe_get(target_format_info, "format_name")),
+            ("Taille", source_format_info.get("size", "unknown"), safe_get(target_format_info, "size")),
+            ("Bitrate", source_format_info.get("bit_rate", "unknown"), safe_get(target_format_info, "bit_rate")),
+            ("Duree (s)", source_format_info.get("duration", "unknown"), safe_get(target_format_info, "duration")),
+            ("Nb streams", len(source_streams_info), len(target_streams_info) if target_streams_info else 0),
+        ],
+    )
+
+    # Video
+    video_rows = [
+        ("Codec", source_video_info.get("codec_name", "unknown"), safe_get(target_video_info, "codec_name")),
+        (
+            "Resolution",
+            f"{source_video_info.get('width', 0)}x{source_video_info.get('height', 0)}",
+            (
+                f"{safe_get(target_video_info, 'width', 0)}x{safe_get(target_video_info, 'height', 0)}"
+                if target_video_info
+                else "-"
+            ),
+        ),
+        ("Pixel format", source_video_info.get("pix_fmt", "unknown"), safe_get(target_video_info, "pix_fmt")),
+        ("Color space", source_video_info.get("color_space", "unknown"), safe_get(target_video_info, "color_space")),
+        (
+            "Color primaries",
+            source_video_info.get("color_primaries", "unknown"),
+            safe_get(target_video_info, "color_primaries"),
+        ),
+        (
+            "Color transfer",
+            source_video_info.get("color_transfer") or source_video_info.get("color_trc", "unknown"),
+            (
+                safe_get(target_video_info, "color_transfer") or safe_get(target_video_info, "color_trc")
+                if target_video_info
+                else "-"
+            ),
+        ),
+        ("Frame rate", source_video_info.get("r_frame_rate", "unknown"), safe_get(target_video_info, "r_frame_rate")),
+    ]
+    add_section("Video", video_rows)
+
+    # Audio Track 0 (AC3)
+    if source_audio_info:
+        add_section(
+            "Audio - Track 0 (AC3)",
+            [
+                (
+                    "Codec",
+                    source_audio_info.get("codec_name", "unknown"),
+                    safe_get(target_audio_info, "codec_name") if target_audio_info else "-",
+                ),
+                (
+                    "Canaux",
+                    source_audio_info.get("channels", "unknown"),
+                    safe_get(target_audio_info, "channels") if target_audio_info else "-",
+                ),
+                (
+                    "Channel layout",
+                    source_audio_info.get("channel_layout", "unknown"),
+                    safe_get(target_audio_info, "channel_layout") if target_audio_info else "-",
+                ),
+                (
+                    "Sample rate",
+                    source_audio_info.get("sample_rate", "unknown"),
+                    safe_get(target_audio_info, "sample_rate") if target_audio_info else "-",
+                ),
+                (
+                    "Bitrate",
+                    source_audio_info.get("bit_rate", "unknown"),
+                    safe_get(target_audio_info, "bit_rate") if target_audio_info else "-",
+                ),
+            ],
+        )
+    else:
+        lines.append("### Audio - Track 0 (AC3)")
+        lines.append("")
+        start_table()
+        lines.append("| Codec | - | - | N |")
+        lines.append("")
+
+    # Audio Track 1 (AAC stereo)
+    target_audio_streams = [s for s in target_streams_info if s.get("codec_type") == "audio"]
+    if len(target_audio_streams) > 1:
+        target_aac = target_audio_streams[1]
+        add_section(
+            "Audio - Track 1 (AAC Stereo)",
+            [
+                ("Codec", "-", target_aac.get("codec_name", "unknown")),
+                ("Canaux", "-", target_aac.get("channels", "unknown")),
+                ("Sample rate", "-", target_aac.get("sample_rate", "unknown")),
+                ("Bitrate", "-", target_aac.get("bit_rate", "unknown")),
+            ],
+        )
+
+    md_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, best_audio_stream, all_streams):
+def ffmpeg_cmd(
+    ffmpeg: str,
+    inp: Path,
+    outp: Path,
+    hdr: bool,
+    trc: str,
+    best_audio_stream: dict | None,
+    all_streams: list[dict],
+) -> list[str]:
     cmd = [ffmpeg, "-hide_banner", "-y" if OVERWRITE else "-n", "-hwaccel", "cuda", "-i", str(inp)]
     cmd += ["-map", "0:v:0"]
 
@@ -422,7 +523,7 @@ def ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, best_audio_stream, all_streams):
     return cmd
 
 
-def main():
+def main() -> None:
     if len(sys.argv) < 2:
         raise SystemExit(f"Usage: {sys.argv[0]} <fichier_video>")
 
@@ -461,14 +562,34 @@ def main():
 
     # Build clean output name
     output_stem = build_output_name(movie_title, year, resolution, tag)
-    outp = OUT_DIR / f"{output_stem}.mkv"
+    base_outp = OUT_DIR / f"{output_stem}.mkv"
 
-    # Create YAML file with technical info
-    yaml_path = OUT_DIR / f"{output_stem}.yaml"
+    # Find available filename if not overwriting
+    if OVERWRITE:
+        outp = base_outp
+    else:
+        outp = find_available_filename(base_outp)
 
-    if outp.exists() and not OVERWRITE:
-        print(f"SKIP (exists): {outp}")
-        return
+    # Create MD file with technical info (same stem as video file)
+    md_path = OUT_DIR / f"{outp.stem}.md"
+
+    # Create MD file immediately with source info and placeholder for target
+    create_md_file(
+        md_path,
+        inp,
+        inp.name,
+        v,
+        best_audio_stream,
+        streams,
+        format_info,
+        outp,
+        outp.name,
+        None,  # target_video_info - will be updated after encoding
+        None,  # target_audio_info - will be updated after encoding
+        [],  # target_streams_info - will be updated after encoding
+        {},  # target_format_info - will be updated after encoding
+    )
+    print(f"MD: {md_path} (created, will be updated after encoding)")
 
     cmd = ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, best_audio_stream, streams)
     print(f"\nIN  : {inp}\nOUT : {outp}\nMODE: {tag} (trc={trc})")
@@ -489,9 +610,9 @@ def main():
     target_audio_streams = [s for s in target_streams if s.get("codec_type") == "audio"]
     target_a_ac3 = target_audio_streams[0] if len(target_audio_streams) > 0 else None
 
-    # Create YAML file after successful encoding
-    create_yaml_file(
-        yaml_path,
+    # Update MD file with target info after successful encoding
+    create_md_file(
+        md_path,
         inp,
         inp.name,
         v,
@@ -505,7 +626,7 @@ def main():
         target_streams,
         target_format_info,
     )
-    print(f"YAML: {yaml_path}")
+    print(f"MD: {md_path} (updated)")
 
 
 if __name__ == "__main__":
