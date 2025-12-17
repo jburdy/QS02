@@ -9,8 +9,9 @@ But :
     - HDR -> HEVC Main10 10-bit (p010le) + tags BT.2020 + PQ/HLG.
     - SDR -> HEVC 8-bit (yuv420p) + tags BT.709.
 - Audio:
-    - Track 0 : AC3 (Dolby Digital) 5.1 si possible (HT‑S40R friendly).
+    - Track 0 : AC3 (Dolby Digital) 5.1 ou 2.0 (HT‑S40R friendly).
     - Track 1 : AAC stéréo (casque / compat universelle, y compris XM6).
+    - Les deux pistes sont générées systématiquement à partir de la meilleure piste source.
 - Plafond bitrate (maxrate/bufsize) = limite les "pics" pour streaming Wi‑Fi.
   La qualité reste pilotée par CQ (constant quality) côté NVENC.
 
@@ -47,8 +48,9 @@ MAXRATE_SDR, BUFSIZE_SDR = "15M", "30M"
 KEEP_SUBS = False
 
 # Audio:
-# - AC3 640k = bon standard 5.1 pour barres ARC.
-# - AAC 192k stéréo = passe-partout (casques, TV, etc.).
+# - Track 0: AC3 640k 5.1 (ou 2.0) = bon standard pour barres ARC (HT-S40R).
+# - Track 1: AAC 192k stéréo = passe-partout (casques Bluetooth XM6, TV, etc.).
+# - Les deux pistes sont générées systématiquement à partir de la meilleure piste source.
 AC3_BITRATE = "640k"
 AAC_BITRATE = "192k"
 
@@ -318,14 +320,16 @@ def create_yaml_file(
     yaml_path.write_text("\n".join(lines), encoding="utf-8")
 
 
-def ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, audio_streams, all_streams):
+def ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, best_audio_stream, all_streams):
     cmd = [ffmpeg, "-hide_banner", "-y" if OVERWRITE else "-n", "-hwaccel", "cuda", "-i", str(inp)]
     cmd += ["-map", "0:v:0"]
 
-    # Map all audio streams by finding their audio index
+    # Map the best audio stream twice: once for AC3, once for AAC stereo
     all_audio_in_file = [s for s in all_streams if s.get("codec_type") == "audio"]
-    for a in audio_streams:
-        audio_idx = all_audio_in_file.index(a)
+    if best_audio_stream:
+        audio_idx = all_audio_in_file.index(best_audio_stream)
+        # Map same source twice: Track 0 (AC3) and Track 1 (AAC stereo)
+        cmd += ["-map", f"0:a:{audio_idx}"]
         cmd += ["-map", f"0:a:{audio_idx}"]
 
     if KEEP_SUBS:
@@ -395,17 +399,21 @@ def ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, audio_streams, all_streams):
             "bt709",
         ]
 
-    # Convert all audio tracks to AC3 (soundbar compatible)
-    for idx, a in enumerate(audio_streams):
-        src_codec = (a.get("codec_name") or "").lower()
-        ch = int(a.get("channels") or 0)
+    # Track 0: AC3 5.1 (or 2.0) for soundbar (HT-S40R)
+    if best_audio_stream:
+        src_codec = (best_audio_stream.get("codec_name") or "").lower()
+        ch = int(best_audio_stream.get("channels") or 0)
+        target_channels = "6" if ch >= 6 else "2"
 
         # If already AC3 with compatible channels, copy
         if src_codec == "ac3" and ch in {2, 6}:
-            cmd += [f"-c:a:{idx}", "copy"]
+            cmd += ["-c:a:0", "copy"]
         else:
             # Convert to AC3
-            cmd += [f"-c:a:{idx}", "ac3", f"-b:a:{idx}", AC3_BITRATE, f"-ac:a:{idx}", ("6" if ch >= 6 else "2")]
+            cmd += ["-c:a:0", "ac3", "-b:a:0", AC3_BITRATE, "-ac:a:0", target_channels]
+
+        # Track 1: AAC stereo for headphones/compatibility (always downmix to stereo)
+        cmd += ["-c:a:1", "aac", "-b:a:1", AAC_BITRATE, "-ac:a:1", "2"]
 
     if KEEP_SUBS:
         cmd += ["-c:s", "copy"]
@@ -439,8 +447,10 @@ def main():
     if not v:
         raise SystemExit(f"SKIP (no video): {inp}")
 
-    # Get all audio streams - convert all non-AC3 to AC3
-    audio_streams = [s for s in streams if s.get("codec_type") == "audio"]
+    # Select best audio stream (french > english > most channels)
+    best_audio_stream = best_audio(streams)
+    if not best_audio_stream:
+        raise SystemExit(f"SKIP (no audio): {inp}")
 
     hdr, trc = is_hdr(v)
     tag = "HDR" if hdr else "SDR"
@@ -460,9 +470,11 @@ def main():
         print(f"SKIP (exists): {outp}")
         return
 
-    cmd = ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, audio_streams, streams)
+    cmd = ffmpeg_cmd(ffmpeg, inp, outp, hdr, trc, best_audio_stream, streams)
     print(f"\nIN  : {inp}\nOUT : {outp}\nMODE: {tag} (trc={trc})")
-    print(f"AUDIO TRACKS: {len(audio_streams)}")
+    print(
+        f"AUDIO: Track 0=AC3 5.1, Track 1=AAC stereo (from {best_audio_stream.get('codec_name', 'unknown')} {best_audio_stream.get('channels', 0)}ch)"
+    )
     if DRY_RUN:
         print("CMD:", " ".join(cmd))
         return
@@ -474,7 +486,8 @@ def main():
     target_v = first(target_streams, "video")
     if not target_v:
         raise SystemExit(f"SKIP (no video in target): {outp}")
-    target_a = first(target_streams, "audio")
+    target_audio_streams = [s for s in target_streams if s.get("codec_type") == "audio"]
+    target_a_ac3 = target_audio_streams[0] if len(target_audio_streams) > 0 else None
 
     # Create YAML file after successful encoding
     create_yaml_file(
@@ -482,13 +495,13 @@ def main():
         inp,
         inp.name,
         v,
-        audio_streams[0] if audio_streams else None,
+        best_audio_stream,
         streams,
         format_info,
         outp,
         outp.name,
         target_v,
-        target_a,
+        target_a_ac3,
         target_streams,
         target_format_info,
     )

@@ -1,53 +1,64 @@
-# Spécifications Techniques & Analyse : BenQ QS02 (X300G)
+# Specifications Techniques — BenQ QS02 (X300G)
 
-**Date :** 17 Décembre 2025  
-**Contexte :** Module Android TV intégré au projecteur X300G  
-**Type :** Dongle Streaming HDMI (Certifié Google)
+**Date :** 17 Decembre 2025  
+**Contexte :** Module Android TV integre au projecteur X300G  
+**Type :** Dongle Streaming HDMI (Certifie Google)
 
-## 1. Vue d'ensemble (Executive Summary)
-Le QS02 n'est pas un accessoire générique mais une unité de calcul dédiée, optimisée pour l'intégration mécanique dans le X300G. Il privilégie l'efficience énergétique et la connectivité moderne (AV1, Wi-Fi 6) à la puissance brute de calcul.
+## Vue d'ensemble
 
-## 2. Spécifications Matérielles (Hardware)
+Le QS02 n'est pas un accessoire generique mais une unite de calcul dediee, optimisee pour l'integration mecanique dans le X300G. Il privilegie l'efficience energetique et la connectivite moderne (AV1, Wi-Fi 6) a la puissance brute de calcul.
 
-| Composant | Spécification Technique | Notes Ingénierie |
-| :--- | :--- | :--- |
+## Specifications techniques
+
+### Specifications materielles (Hardware)
+
+| Composant | Specification technique | Notes |
+|---|---|---|
 | **SoC** | **Amlogic S905Y4** | Quad-core Cortex-A35 @ 2.0 GHz (12nm). Architecture efficiente (basse conso/chauffe). |
 | **GPU** | ARM Mali-G31 MP2 | Supporte OpenGL ES 3.2. Suffisant pour UI 4K @ 60fps. |
-| **VPU (Vidéo)** | Amlogic Video Engine 10 | Décodage matériel **AV1**, VP9, H.265, H.264. Support HDR10, HDR10+, HLG. |
-| **RAM** | **2 Go** LPDDR4 | Le standard strict pour Android TV. Limite le multitâche lourd. |
-| **Stockage** | **16 Go** eMMC | Capacité supérieure à la moyenne (souvent 8 Go), permet le cache local. |
-| **Réseau** | **Wi-Fi 6** (802.11ax) | 2x2 MIMO. Crucial pour le streaming 4K à haut débit (>50 Mbps) sans fil. |
-| **Bluetooth** | Version 5.0 | Pour télécommande unifiée et périphériques audio (A2DP). |
-| **I/O** | 1x Mini-HDMI (Sortie) | Format propriétaire pour l'intégration interne. |
-| **OS** | Android TV 10 | Certifié Google (Play Store officiel). Mise à jour OTA supportée. |
+| **VPU (Video)** | Amlogic Video Engine 10 | Decodage materiel **AV1**, VP9, H.265, H.264. Support HDR10, HDR10+, HLG. |
+| **RAM** | **2 Go** LPDDR4 | Le standard strict pour Android TV. Limite le multitache lourd. |
+| **Stockage** | **16 Go** eMMC | Capacite superieure a la moyenne (souvent 8 Go), permet le cache local. |
+| **Reseau** | **Wi-Fi 6** (802.11ax) | 2x2 MIMO. Crucial pour le streaming 4K a haut debit (>50 Mbps) sans fil. |
+| **Bluetooth** | Version 5.0 | Pour telecommande unifiee et peripheriques audio (A2DP). |
+| **I/O** | 1x Mini-HDMI (Sortie) | Format proprietaire pour l'integration interne. |
+| **OS** | Android TV 10 | Certifie Google (Play Store officiel). Mise a jour OTA supportee. |
 
-## 3. Intégration Système (X300G)
-*   **Facteur de forme :** Conception "Dongle" spécifique pour insertion dans la trappe arrière du X300G.
-*   **Alimentation :** Via câble USB interne (pas de brique externe requise).
-*   **Contrôle :** HDMI-CEC complet. La télécommande du projecteur contrôle directement l'OS Android via Bluetooth (appairage unique).
-*   **Certification :** Netflix Natif (4K HDR), Prime Video, Disney+, etc.
+### Integration systeme (X300G)
 
-## 4. Analyse Critique
+| Aspect | Detail |
+|---|---|
+| **Facteur de forme** | Conception "Dongle" specifique pour insertion dans la trappe arriere du X300G |
+| **Alimentation** | Via cable USB interne (pas de brique externe requise) |
+| **Controle** | HDMI-CEC complet. La telecommande du projecteur controle directement l'OS Android via Bluetooth (appairage unique) |
+| **Certification** | Netflix Natif (4K HDR), Prime Video, Disney+, etc. |
 
-### ✅ Points Forts (Pros)
-*   **Support AV1 :** Avantage technique majeur sur les box plus anciennes (ex: Shield 2019). L'AV1 est le codec cible pour YouTube/Netflix 4K, offrant une meilleure qualité à débit égal.
-*   **Connectivité Wi-Fi 6 :** Essentiel pour un projecteur "portable" souvent loin du routeur. Garantit la bande passante pour des flux 4K HDR sans latence.
-*   **Intégration "Invisible" :** Zéro câble apparent, solution WAF (Wife Acceptance Factor) élevée.
+## Limitations importantes
 
-### ⚠️ Limitations (Cons)
-*   **SoC Entrée de gamme :** Le Cortex-A35 est orienté efficience, pas performance. Suffisant pour le streaming, mais limite pour l'émulation (RetroArch) au-delà des consoles 16-32 bits.
-*   **RAM 2 Go :** Risque de rechargement des applications si on bascule fréquemment entre des apps lourdes (ex: Kodi <-> Plex).
-*   **Audio Passthrough :** Limité par les specs Android TV standard (pas de bitstream TrueHD/DTS-HD MA garanti vers ampli externe sans configuration complexe, bien que le matériel le supporte théoriquement).
+### ⚠️ Points a considerer
 
-## 5. Comparatif Rapide
+- **SoC Entree de gamme :** Le Cortex-A35 est oriente efficience, pas performance. Suffisant pour le streaming, mais limite pour l'emulation (RetroArch) au-dela des consoles 16-32 bits.
+- **RAM 2 Go :** Risque de rechargement des applications si on bascule frequemment entre des apps lourdes (ex: Kodi <-> Plex).
+- **Audio Passthrough :** Limite par les specs Android TV standard (pas de bitstream TrueHD/DTS-HD MA garanti vers ampli externe sans configuration complexe, bien que le materiel le supporte theoriquement).
+
+## Points forts
+
+- **Support AV1 :** Avantage technique majeur sur les box plus anciennes (ex: Shield 2019). L'AV1 est le codec cible pour YouTube/Netflix 4K, offrant une meilleure qualite a debit egal.
+- **Connectivite Wi-Fi 6 :** Essentiel pour un projecteur "portable" souvent loin du routeur. Garantit la bande passante pour des flux 4K HDR sans latence.
+- **Integration "Invisible" :** Zero cable apparent, solution WAF (Wife Acceptance Factor) elevee.
+
+## Notes techniques
+
+### Comparatif rapide
 
 | Feature | **BenQ QS02** | **Nvidia Shield TV Pro** | **Google Chromecast 4K** |
-| :--- | :--- | :--- | :--- |
+|---|---|---|---|
 | **Processeur** | Amlogic S905Y4 | Tegra X1+ | Amlogic S905X3 |
 | **RAM** | 2 Go | **3 Go** | 2 Go |
 | **Codec AV1** | **Oui** | Non | Non |
 | **Wi-Fi** | **Wi-Fi 6** | Wi-Fi 5 (ac) | Wi-Fi 5 (ac) |
 | **Upscaling IA** | Non | **Oui** | Non |
 
-## 6. Verdict
-Pour un usage "Consommation de média" (Streaming, Plex local, Canal+), le **QS02 est techniquement plus moderne** que beaucoup de box externes grâce à l'AV1 et le Wi-Fi 6. Inutile de le remplacer sauf besoin spécifique de puissance brute (Serveur Plex, Emulation GameCube+).
+### Verdict
+
+Pour un usage "Consommation de media" (Streaming, Plex local, Canal+), le **QS02 est techniquement plus moderne** que beaucoup de box externes grace a l'AV1 et le Wi-Fi 6. Inutile de le remplacer sauf besoin specifique de puissance brute (Serveur Plex, Emulation GameCube+).

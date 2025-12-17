@@ -15,7 +15,7 @@ Ce document décrit les spécifications techniques et les directives de fonction
 
 *   **Encodage** : PC avec GPU NVIDIA (Architecture Turing ou plus récente recommandée, ex: RTX 4070) supportant NVENC HEVC.
 *   **Logiciels** : 
-    *   Python 3.14+
+    *   Python 3.13+
     *   FFmpeg (compilé avec support `hevc_nvenc`)
     *   FFprobe
 *   **Périphériques Audio Cibles** :
